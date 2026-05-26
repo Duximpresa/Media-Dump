@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="MediaDump icon">
+  <defs>
+    <linearGradient id="bg" x1="48" y1="32" x2="208" y2="224" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0ea5e9"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+    <linearGradient id="folder" x1="96" y1="112" x2="215" y2="209" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dff8ff"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+
+  <path d="M36 70c0-16 12-28 28-28h48l28 30h38c16 0 28 12 28 28v84c0 16-12 28-28 28H64c-16 0-28-12-28-28V70Z" fill="#083344" opacity=".22"/>
+
+  <path d="M92 106c0-12 10-22 22-22h40l18 20h38c12 0 22 10 22 22v58c0 12-10 22-22 22h-96c-12 0-22-10-22-22v-78Z" fill="url(#folder)"/>
+  <path d="M92 131h140v53c0 12-10 22-22 22h-96c-12 0-22-10-22-22v-53Z" fill="#f8fdff"/>
+
+  <path d="M45 56c0-8 6-14 14-14h56l24 24v66c0 8-6 14-14 14H59c-8 0-14-6-14-14V56Z" fill="#1f2937"/>
+  <path d="M115 42v22c0 6 4 10 10 10h14L115 42Z" fill="#4b5563"/>
+  <rect x="61" y="63" width="39" height="39" rx="8" fill="#e0f2fe"/>
+  <circle cx="75" cy="77" r="6" fill="#0ea5e9"/>
+  <path d="M62 96 76 84l10 9 7-6 8 9v6H62v-6Z" fill="#14b8a6"/>
+  <rect x="61" y="113" width="61" height="8" rx="4" fill="#64748b"/>
+  <rect x="61" y="126" width="46" height="8" rx="4" fill="#64748b"/>
+
+  <path d="M136 117h35v-14l34 31-34 31v-15h-35v-33Z" fill="#ffffff"/>
+  <path d="M136 117h35v-14l34 31-34 31v-15h-35v-33Z" fill="#0891b2" opacity=".12"/>
+  <path d="M141 124h37v-9l18 19-18 19v-10h-37v-19Z" fill="#06b6d4"/>
+</svg>
