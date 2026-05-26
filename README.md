@@ -1,6 +1,6 @@
 # 摄影素材按日期复制工具
 
-这是一个 Python + Tkinter 的 Windows 桌面小工具，用来把内存卡或任意源文件夹里的照片、视频复制到电脑，并按 Windows 文件创建时间分类保存。
+MediaDump 是一个 Python + Tkinter 的 Windows 桌面小工具，用来把内存卡或任意源文件夹里的照片、视频复制到电脑，并按 Windows 文件创建时间分类保存。
 
 ## 运行
 
@@ -25,8 +25,11 @@ python media_date_copier.py
 - 选择源文件夹和目标文件夹
 - 分别记忆源文件夹和目标文件夹路径
 - 选择照片、视频、全部文件或自定义扩展名
+- 导入前预览文件数量、总大小、跳过数量、自动改名数量和日期文件夹数量
+- 目标文件已存在且大小相同时自动跳过
+- 目标文件已存在但大小不同时自动改名，避免覆盖
 - 复制时显示进度、当前文件、当前速度、平均速度和日志
-- 目标文件已存在时跳过
+- 复制完成后使用 SHA-256 校验源文件和目标文件
 - 支持复制过程中取消，已复制的文件会保留
 
 ## 代码结构
@@ -34,7 +37,9 @@ python media_date_copier.py
 ```text
 media_date_copier.py       程序入口
 media_copier/app.py        Tkinter 界面
-media_copier/copier.py     复制引擎、速度统计、取消控制
+media_copier/planner.py    导入预览和重复处理计划
+media_copier/copier.py     复制引擎、速度统计、取消控制、校验
+media_copier/hash_utils.py SHA-256 文件校验
 media_copier/scanner.py    文件扫描
 media_copier/templates.py  日期路径模板
 media_copier/config.py     配置读写
@@ -47,10 +52,11 @@ media_copier/file_types.py 文件类型选择
 %APPDATA%/MediaDateCopier/config.json
 ```
 
-## 后续打包为 EXE
+## 打包为 EXE
 
-安装 PyInstaller 后可以执行：
+Conda 环境下建议先把 Tk DLL 路径加入当前 PowerShell：
 
 ```powershell
-pyinstaller --onefile --windowed media_date_copier.py
+$env:PATH='D:\ProgramData\miniconda3\envs\main\Library\bin;' + $env:PATH
+python -m PyInstaller --clean --onefile --windowed --name MediaDump --icon assets\icon\mediadump-icon.ico media_date_copier.py
 ```

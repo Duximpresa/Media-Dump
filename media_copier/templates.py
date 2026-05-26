@@ -36,4 +36,3 @@ def validate_template(template: str) -> None:
         raise ValueError(f"模板无法使用：{exc}") from exc
     if not rendered.strip():
         raise ValueError("模板渲染结果不能为空。")
-
