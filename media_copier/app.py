@@ -10,6 +10,7 @@ from tkinter import (
     Label,
     LabelFrame,
     Menu,
+    Spinbox,
     StringVar,
     Tk,
     filedialog,
@@ -32,15 +33,22 @@ from .file_types import selected_extensions
 from .formatting import format_bytes, format_speed
 from .models import CopyStats, ImportPlan
 from .planner import build_import_plan
+from .renamer import (
+    RenamePlan,
+    build_replace_plan,
+    build_sequence_plan,
+    execute_rename_plan,
+)
+from .resources import configure_window_icon, configure_windows_app_id
 from .templates import validate_template
 
 
 class MediaDateCopierApp:
     def __init__(self, root: Tk) -> None:
         self.root = root
-        self.root.title("摄影素材按日期复制工具")
-        self.root.geometry("960x740")
-        self.root.minsize(820, 640)
+        self.root.title("MediaDump")
+        self.root.geometry("980x760")
+        self.root.minsize(840, 660)
         self._build_menu()
 
         self.config = load_config()
@@ -49,7 +57,18 @@ class MediaDateCopierApp:
         self.worker: threading.Thread | None = None
         self.preview_worker: threading.Thread | None = None
         self.import_plan: ImportPlan | None = None
+        self.replace_rename_plan: RenamePlan | None = None
+        self.sequence_rename_plan: RenamePlan | None = None
 
+        self._init_import_vars()
+        self._init_rename_vars()
+        self._build_ui()
+        self._toggle_custom_template()
+        self._bind_preview_invalidators()
+        self._bind_rename_invalidators()
+        self._poll_events()
+
+    def _init_import_vars(self) -> None:
         self.source_var = StringVar(value=self.config.get("source_dir", ""))
         self.target_var = StringVar(value=self.config.get("target_dir", ""))
         self.custom_ext_var = StringVar(
@@ -73,10 +92,20 @@ class MediaDateCopierApp:
         self.all_files_var = BooleanVar(value="all" in selected_modes)
         self.custom_files_var = BooleanVar(value="custom" in selected_modes)
 
-        self._build_ui()
-        self._toggle_custom_template()
-        self._bind_preview_invalidators()
-        self._poll_events()
+    def _init_rename_vars(self) -> None:
+        self.replace_dir_var = StringVar(value="")
+        self.find_text_var = StringVar(value="")
+        self.replace_text_var = StringVar(value="")
+        self.rename_files_var = BooleanVar(value=True)
+        self.rename_folders_var = BooleanVar(value=False)
+        self.rename_recursive_var = BooleanVar(value=False)
+        self.sequence_dir_var = StringVar(value="")
+        self.sequence_prefix_var = StringVar(value="Media_")
+        self.sequence_start_var = StringVar(value="1")
+        self.sequence_digits_var = StringVar(value="3")
+        self.replace_summary_var = StringVar(value="尚未预览查找替换")
+        self.sequence_summary_var = StringVar(value="尚未预览序列重命名")
+        self.rename_status_var = StringVar(value="请选择一种重命名方式并预览")
 
     def _build_menu(self) -> None:
         menu_bar = Menu(self.root)
@@ -93,15 +122,30 @@ class MediaDateCopierApp:
                 f"版本：{__version__}\n"
                 "作者：Duximpresa\n"
                 "项目地址：https://github.com/Duximpresa/Media-Dump\n\n"
-                "摄影素材按日期复制、预览、智能重复处理和校验工具。"
+                "摄影素材按日期复制、预览、智能重复处理、校验和批量重命名工具。"
             ),
         )
 
     def _build_ui(self) -> None:
         self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(5, weight=1)
+        self.root.rowconfigure(0, weight=1)
 
-        paths_frame = LabelFrame(self.root, text="路径")
+        notebook = ttk.Notebook(self.root)
+        notebook.grid(row=0, column=0, sticky="nsew")
+
+        import_tab = Frame(notebook)
+        rename_tab = Frame(notebook)
+        notebook.add(import_tab, text="导入复制")
+        notebook.add(rename_tab, text="批量重命名")
+
+        self._build_import_tab(import_tab)
+        self._build_rename_tab(rename_tab)
+
+    def _build_import_tab(self, parent: Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(5, weight=1)
+
+        paths_frame = LabelFrame(parent, text="路径")
         paths_frame.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 8))
         paths_frame.columnconfigure(1, weight=1)
 
@@ -113,7 +157,7 @@ class MediaDateCopierApp:
         Entry(paths_frame, textvariable=self.target_var).grid(row=1, column=1, sticky="ew", padx=8, pady=8)
         Button(paths_frame, text="选择目标", command=self.choose_target).grid(row=1, column=2, padx=10, pady=8)
 
-        types_frame = LabelFrame(self.root, text="复制文件类型")
+        types_frame = LabelFrame(parent, text="复制文件类型")
         types_frame.grid(row=1, column=0, sticky="ew", padx=14, pady=8)
         types_frame.columnconfigure(4, weight=1)
 
@@ -123,7 +167,7 @@ class MediaDateCopierApp:
         Checkbutton(types_frame, text="自定义扩展名", variable=self.custom_files_var, command=self._on_mode_changed).grid(row=0, column=3, padx=10, pady=8, sticky="w")
         Entry(types_frame, textvariable=self.custom_ext_var).grid(row=0, column=4, sticky="ew", padx=(4, 10), pady=8)
 
-        template_frame = LabelFrame(self.root, text="保存路径格式")
+        template_frame = LabelFrame(parent, text="保存路径格式")
         template_frame.grid(row=2, column=0, sticky="ew", padx=14, pady=8)
         template_frame.columnconfigure(1, weight=1)
 
@@ -141,7 +185,7 @@ class MediaDateCopierApp:
         self.template_entry = Entry(template_frame, textvariable=self.custom_template_var)
         self.template_entry.grid(row=1, column=1, sticky="ew", padx=8, pady=8)
 
-        preview_frame = LabelFrame(self.root, text="导入预览")
+        preview_frame = LabelFrame(parent, text="导入预览")
         preview_frame.grid(row=3, column=0, sticky="ew", padx=14, pady=8)
         preview_frame.columnconfigure(1, weight=1)
         self.preview_button = Button(preview_frame, text="预览导入", command=self.start_preview)
@@ -150,7 +194,7 @@ class MediaDateCopierApp:
             row=0, column=1, sticky="ew", padx=8, pady=8
         )
 
-        controls_frame = Frame(self.root)
+        controls_frame = Frame(parent)
         controls_frame.grid(row=4, column=0, sticky="ew", padx=14, pady=8)
         controls_frame.columnconfigure(2, weight=1)
 
@@ -160,7 +204,7 @@ class MediaDateCopierApp:
         self.cancel_button.grid(row=0, column=1, padx=8, pady=4)
         Label(controls_frame, textvariable=self.status_var, anchor="w").grid(row=0, column=2, sticky="ew", padx=8)
 
-        progress_frame = LabelFrame(self.root, text="复制进度")
+        progress_frame = LabelFrame(parent, text="复制进度")
         progress_frame.grid(row=5, column=0, sticky="nsew", padx=14, pady=(8, 14))
         progress_frame.columnconfigure(0, weight=1)
         progress_frame.rowconfigure(5, weight=1)
@@ -170,9 +214,71 @@ class MediaDateCopierApp:
         Label(progress_frame, textvariable=self.current_file_var, anchor="w").grid(row=1, column=0, sticky="ew", padx=10, pady=4)
         Label(progress_frame, textvariable=self.stats_var, anchor="w").grid(row=2, column=0, sticky="ew", padx=10, pady=4)
         Label(progress_frame, textvariable=self.speed_var, anchor="w").grid(row=3, column=0, sticky="ew", padx=10, pady=4)
-        self.log_text = ScrolledText(progress_frame, height=14, wrap="word")
+        self.log_text = ScrolledText(progress_frame, height=12, wrap="word")
         self.log_text.grid(row=5, column=0, sticky="nsew", padx=10, pady=(6, 10))
         self.log_text.configure(state="disabled")
+
+    def _build_rename_tab(self, parent: Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(2, weight=1)
+
+        replace_frame = LabelFrame(parent, text="查找替换")
+        replace_frame.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 8))
+        replace_frame.columnconfigure(1, weight=1)
+        Label(replace_frame, text="目标目录").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+        Entry(replace_frame, textvariable=self.replace_dir_var).grid(row=0, column=1, sticky="ew", padx=8, pady=8)
+        Button(replace_frame, text="选择", command=self.choose_replace_dir).grid(row=0, column=2, padx=10, pady=8)
+        Label(replace_frame, text="查找内容").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+        Entry(replace_frame, textvariable=self.find_text_var).grid(row=1, column=1, sticky="ew", padx=8, pady=8)
+        Label(replace_frame, text="替换为").grid(row=2, column=0, sticky="w", padx=10, pady=8)
+        Entry(replace_frame, textvariable=self.replace_text_var).grid(row=2, column=1, sticky="ew", padx=8, pady=8)
+        Checkbutton(replace_frame, text="作用于文件", variable=self.rename_files_var, command=self.invalidate_replace_preview).grid(row=3, column=0, sticky="w", padx=10, pady=8)
+        Checkbutton(replace_frame, text="作用于文件夹", variable=self.rename_folders_var, command=self.invalidate_replace_preview).grid(row=3, column=1, sticky="w", padx=8, pady=8)
+        Checkbutton(replace_frame, text="包含子文件夹和里面的文件", variable=self.rename_recursive_var, command=self.invalidate_replace_preview).grid(row=3, column=2, sticky="w", padx=10, pady=8)
+        Button(replace_frame, text="预览查找替换", command=self.preview_replace_rename).grid(row=4, column=0, padx=10, pady=8)
+        self.execute_replace_button = Button(
+            replace_frame,
+            text="执行查找替换",
+            command=self.execute_replace_rename,
+            state="disabled",
+        )
+        self.execute_replace_button.grid(row=4, column=1, sticky="w", padx=8, pady=8)
+        Label(replace_frame, textvariable=self.replace_summary_var, anchor="w", justify="left").grid(
+            row=5, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 8)
+        )
+
+        sequence_frame = LabelFrame(parent, text="序列重命名")
+        sequence_frame.grid(row=1, column=0, sticky="ew", padx=14, pady=8)
+        sequence_frame.columnconfigure(1, weight=1)
+        Label(sequence_frame, text="目标目录").grid(row=0, column=0, sticky="w", padx=10, pady=8)
+        Entry(sequence_frame, textvariable=self.sequence_dir_var).grid(row=0, column=1, sticky="ew", padx=8, pady=8)
+        Button(sequence_frame, text="选择", command=self.choose_sequence_dir).grid(row=0, column=2, padx=10, pady=8)
+        Label(sequence_frame, text="前缀").grid(row=1, column=0, sticky="w", padx=10, pady=8)
+        Entry(sequence_frame, textvariable=self.sequence_prefix_var).grid(row=1, column=1, sticky="ew", padx=8, pady=8)
+        Label(sequence_frame, text="起始编号").grid(row=2, column=0, sticky="w", padx=10, pady=8)
+        Spinbox(sequence_frame, from_=0, to=999999, textvariable=self.sequence_start_var, width=10).grid(row=2, column=1, sticky="w", padx=8, pady=8)
+        Label(sequence_frame, text="编号位数").grid(row=2, column=1, sticky="w", padx=(120, 8), pady=8)
+        Spinbox(sequence_frame, from_=1, to=12, textvariable=self.sequence_digits_var, width=8).grid(row=2, column=1, sticky="w", padx=(200, 8), pady=8)
+        Button(sequence_frame, text="预览序列重命名", command=self.preview_sequence_rename).grid(row=3, column=0, padx=10, pady=8)
+        self.execute_sequence_button = Button(
+            sequence_frame,
+            text="执行序列重命名",
+            command=self.execute_sequence_rename,
+            state="disabled",
+        )
+        self.execute_sequence_button.grid(row=3, column=1, sticky="w", padx=8, pady=8)
+        Label(sequence_frame, textvariable=self.sequence_summary_var, anchor="w", justify="left").grid(
+            row=4, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 8)
+        )
+
+        log_frame = LabelFrame(parent, text="重命名日志")
+        log_frame.grid(row=2, column=0, sticky="nsew", padx=14, pady=(8, 14))
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(1, weight=1)
+        Label(log_frame, textvariable=self.rename_status_var, anchor="w").grid(row=0, column=0, sticky="ew", padx=10, pady=6)
+        self.rename_log_text = ScrolledText(log_frame, height=12, wrap="word")
+        self.rename_log_text.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        self.rename_log_text.configure(state="disabled")
 
     def _bind_preview_invalidators(self) -> None:
         for variable in (
@@ -183,6 +289,21 @@ class MediaDateCopierApp:
             self.template_choice_var,
         ):
             variable.trace_add("write", lambda *_args: self.invalidate_preview())
+
+    def _bind_rename_invalidators(self) -> None:
+        for variable in (
+            self.replace_dir_var,
+            self.find_text_var,
+            self.replace_text_var,
+        ):
+            variable.trace_add("write", lambda *_args: self.invalidate_replace_preview())
+        for variable in (
+            self.sequence_dir_var,
+            self.sequence_prefix_var,
+            self.sequence_start_var,
+            self.sequence_digits_var,
+        ):
+            variable.trace_add("write", lambda *_args: self.invalidate_sequence_preview())
 
     def choose_source(self) -> None:
         selected = filedialog.askdirectory(title="选择源文件夹", initialdir=self.source_var.get().strip() or None)
@@ -195,6 +316,16 @@ class MediaDateCopierApp:
         if selected:
             self.target_var.set(selected)
             self._save_current_config()
+
+    def choose_replace_dir(self) -> None:
+        selected = filedialog.askdirectory(title="选择查找替换目录", initialdir=self.replace_dir_var.get().strip() or None)
+        if selected:
+            self.replace_dir_var.set(selected)
+
+    def choose_sequence_dir(self) -> None:
+        selected = filedialog.askdirectory(title="选择序列重命名目录", initialdir=self.sequence_dir_var.get().strip() or None)
+        if selected:
+            self.sequence_dir_var.set(selected)
 
     def start_preview(self) -> None:
         settings = self._validated_settings()
@@ -263,12 +394,107 @@ class MediaDateCopierApp:
         self.cancel_button.configure(state="disabled")
         self._append_log("已请求取消：当前文件完成后停止。")
 
+    def preview_replace_rename(self) -> None:
+        try:
+            plan = build_replace_plan(
+                root=Path(self.replace_dir_var.get().strip()),
+                find_text=self.find_text_var.get(),
+                replace_text=self.replace_text_var.get(),
+                include_files=self.rename_files_var.get(),
+                include_folders=self.rename_folders_var.get(),
+                recursive=self.rename_recursive_var.get(),
+            )
+        except ValueError as exc:
+            messagebox.showerror("无法预览", str(exc))
+            return
+        self._set_rename_plan("replace", plan)
+
+    def preview_sequence_rename(self) -> None:
+        try:
+            plan = build_sequence_plan(
+                root=Path(self.sequence_dir_var.get().strip()),
+                prefix=self.sequence_prefix_var.get(),
+                start_number=int(self.sequence_start_var.get()),
+                digits=int(self.sequence_digits_var.get()),
+            )
+        except ValueError as exc:
+            messagebox.showerror("无法预览", str(exc))
+            return
+        self._set_rename_plan("sequence", plan)
+
+    def _set_rename_plan(self, mode: str, plan: RenamePlan) -> None:
+        if mode == "replace":
+            self.replace_rename_plan = plan
+            self.execute_replace_button.configure(
+                state="normal" if plan.summary.rename_count > 0 else "disabled"
+            )
+            self.replace_summary_var.set(self._format_rename_summary(plan))
+            self.rename_status_var.set("查找替换预览完成")
+        else:
+            self.sequence_rename_plan = plan
+            self.execute_sequence_button.configure(
+                state="normal" if plan.summary.rename_count > 0 else "disabled"
+            )
+            self.sequence_summary_var.set(self._format_rename_summary(plan))
+            self.rename_status_var.set("序列重命名预览完成")
+        self._clear_rename_log()
+        for item in plan.items[:80]:
+            action = "重命名" if item.action == "rename" else "跳过"
+            self._append_rename_log(f"{action}：{item.source} -> {item.destination} {item.reason}")
+        if len(plan.items) > 80:
+            self._append_rename_log(f"还有 {len(plan.items) - 80} 项未显示。")
+
+    def execute_replace_rename(self) -> None:
+        self._execute_rename("replace")
+
+    def execute_sequence_rename(self) -> None:
+        self._execute_rename("sequence")
+
+    def _execute_rename(self, mode: str) -> None:
+        is_replace = mode == "replace"
+        plan = self.replace_rename_plan if is_replace else self.sequence_rename_plan
+        action_name = "查找替换" if is_replace else "序列重命名"
+        if plan is None:
+            messagebox.showerror("无法执行", f"请先预览{action_name}。")
+            return
+        if plan.summary.rename_count == 0:
+            messagebox.showinfo("无需执行", "没有可重命名的项目。")
+            return
+        result = execute_rename_plan(plan)
+        self.rename_status_var.set(
+            f"{action_name}完成：重命名 {result.renamed} / 跳过 {result.skipped} / 失败 {result.failed}"
+        )
+        self._clear_rename_log()
+        for message in result.messages:
+            self._append_rename_log(message)
+        if is_replace:
+            self.replace_rename_plan = None
+            self.execute_replace_button.configure(state="disabled")
+            self.replace_summary_var.set("已执行，请重新预览查找替换")
+        else:
+            self.sequence_rename_plan = None
+            self.execute_sequence_button.configure(state="disabled")
+            self.sequence_summary_var.set("已执行，请重新预览序列重命名")
+        messagebox.showinfo("重命名完成", self.rename_status_var.get())
+
     def invalidate_preview(self) -> None:
         if self.worker is not None and self.worker.is_alive():
             return
         self.import_plan = None
         self.start_button.configure(state="disabled")
         self.preview_summary_var.set("设置已改变，请重新预览")
+
+    def invalidate_replace_preview(self) -> None:
+        self.replace_rename_plan = None
+        if hasattr(self, "execute_replace_button"):
+            self.execute_replace_button.configure(state="disabled")
+        self.replace_summary_var.set("设置已改变，请重新预览查找替换")
+
+    def invalidate_sequence_preview(self) -> None:
+        self.sequence_rename_plan = None
+        if hasattr(self, "execute_sequence_button"):
+            self.execute_sequence_button.configure(state="disabled")
+        self.sequence_summary_var.set("设置已改变，请重新预览序列重命名")
 
     def _validated_settings(self) -> tuple[Path, Path, set[str] | None, str] | None:
         source_text = self.source_var.get().strip()
@@ -424,6 +650,13 @@ class MediaDateCopierApp:
             f"日期文件夹 {summary.date_folder_count}"
         )
 
+    def _format_rename_summary(self, plan: RenamePlan) -> str:
+        summary = plan.summary
+        return (
+            f"总数 {summary.total_items} / 将重命名 {summary.rename_count} / "
+            f"跳过 {summary.skip_count} / 文件 {summary.file_count} / 文件夹 {summary.folder_count}"
+        )
+
     def _update_progress(self, stats: CopyStats) -> None:
         self.progress.configure(value=min(stats.processed_bytes, max(stats.total_bytes, 1)))
         self.stats_var.set(
@@ -484,8 +717,24 @@ class MediaDateCopierApp:
         self.log_text.delete("1.0", "end")
         self.log_text.configure(state="disabled")
 
+    def _append_rename_log(self, message: str) -> None:
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.rename_log_text.configure(state="normal")
+        self.rename_log_text.insert("end", f"[{timestamp}] {message}\n")
+        self.rename_log_text.see("end")
+        self.rename_log_text.configure(state="disabled")
+
+    def _clear_rename_log(self) -> None:
+        self.rename_log_text.configure(state="normal")
+        self.rename_log_text.delete("1.0", "end")
+        self.rename_log_text.configure(state="disabled")
+
 
 def main() -> None:
+    configure_windows_app_id()
     root = Tk()
+    configure_window_icon(root)
     MediaDateCopierApp(root)
     root.mainloop()

@@ -31,6 +31,11 @@ python media_date_copier.py
 - 复制时显示进度、当前文件、当前速度、平均速度和日志
 - 复制完成后使用 SHA-256 校验源文件和目标文件
 - 支持复制过程中取消，已复制的文件会保留
+- 批量重命名分页：
+  - 查找替换指定目录下的文件和文件夹名称
+  - 可选择是否包含子文件夹和里面的文件
+  - 对指定文件夹直属文件进行序列重命名
+  - 重命名前必须预览，遇到冲突默认跳过且不覆盖
 
 ## 代码结构
 
@@ -44,6 +49,7 @@ media_copier/scanner.py    文件扫描
 media_copier/templates.py  日期路径模板
 media_copier/config.py     配置读写
 media_copier/file_types.py 文件类型选择
+media_copier/renamer.py    批量重命名计划和执行
 ```
 
 配置文件保存在：
@@ -58,5 +64,5 @@ Conda 环境下建议先把 Tk DLL 路径加入当前 PowerShell：
 
 ```powershell
 $env:PATH='D:\ProgramData\miniconda3\envs\main\Library\bin;' + $env:PATH
-python -m PyInstaller --clean --onefile --windowed --name MediaDump --icon assets\icon\mediadump-icon.ico media_date_copier.py
+python -m PyInstaller --clean --onefile --windowed --name MediaDump --icon assets\icon\mediadump-icon.ico --add-data "assets\icon\mediadump-icon.ico;assets\icon" --add-data "assets\icon\mediadump-icon-1024.png;assets\icon" media_date_copier.py
 ```
